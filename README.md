@@ -15,8 +15,7 @@ LD Score Regression, colocalisation and bioinformatic follow-up.
 - Telomere length GWAS: Burren et al. 2024, Nature Genetics (GCST90435144)
 - Fibrosis GWAS: Joof et al. 2026, medRxiv
 
-Data is not stored in this repository. Summary statistics are publicly available 
-via the links above.
+Data is not stored in this repository.
 
 ## Analysis Pipeline
 1. Quality control and variant filtering
