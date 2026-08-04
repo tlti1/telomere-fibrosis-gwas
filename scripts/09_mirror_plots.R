@@ -6,9 +6,12 @@
 # Description: Produces mirror plots for all 9 testable colocalisation
 #              regions. Fibrosis shown upward, telomere downward (scaled to
 #              fibrosis range). Points coloured by LD with lead variant
-#              (LDLink LDproxy, GBR population) for colocalised regions.
+#              (LDLink LDproxy, GBR population) for all 9 regions.
 #              MAF >= 1% filter applied. Zero p-values floored to avoid
 #              log10(0) = -Inf.
+#              Lead variants used for LD colouring are the Bonferroni-
+#              significant telomere variants, not the most significant
+#              variant in the fibrosis region file.
 # ============================================================================
 
 library(ggplot2)
@@ -19,33 +22,33 @@ OUT_DIR   <- file.path(COLOC_DIR, "mirror_plots_LD")
 dir.create(OUT_DIR, showWarnings=FALSE)
 
 regions <- list(
-  list(organ="respiratory",    gene="TERT",    chr=5,
-       fib="respiratory_TERT.txt",       telo="telomere_TERT.txt",
-       lead="rs7705526",  ld="rs7705526_LD.txt"),
-  list(organ="cardiovascular", gene="ZC3HC1",  chr=7,
-       fib="cardiovascular_ZC3HC1.txt",  telo="telomere_ZC3HC1.txt",
+  list(organ="respiratory", gene="TERT", chr=5,
+       fib="respiratory_TERT.txt", telo="telomere_TERT.txt",
+       lead="rs7705526", ld="rs7705526_LD.txt"),
+  list(organ="cardiovascular", gene="ZC3HC1", chr=7,
+       fib="cardiovascular_ZC3HC1.txt", telo="telomere_ZC3HC1.txt",
        lead="rs11556924", ld="rs11556924_LD.txt"),
-  list(organ="cardiovascular", gene="ATXN2",   chr=12,
-       fib="cardiovascular_ATXN2.txt",   telo="telomere_ATXN2.txt",
-       lead="rs4766578",  ld="rs4766578_LD.txt"),
-  list(organ="diabetes",       gene="PABPC4",  chr=1,
-       fib="diabetes_PABPC4.txt",        telo="telomere_PABPC4.txt",
-       lead="rs3768321",  ld="rs3768321_LD.txt"),
-  list(organ="diabetes",       gene="MST1R",   chr=3,
-       fib="diabetes_MST1R.txt",         telo="telomere_MST1R.txt",
-       lead=NA, ld=NA),
-  list(organ="diabetes",       gene="TRMT1",   chr=19,
-       fib="diabetes_TRMT1.txt",         telo="telomere_TRMT1.txt",
+  list(organ="cardiovascular", gene="ATXN2", chr=12,
+       fib="cardiovascular_ATXN2.txt", telo="telomere_ATXN2.txt",
+       lead="rs4766578", ld="rs4766578_LD.txt"),
+  list(organ="diabetes", gene="PABPC4", chr=1,
+       fib="diabetes_PABPC4.txt", telo="telomere_PABPC4.txt",
+       lead="rs3768321", ld="rs3768321_LD.txt"),
+  list(organ="diabetes", gene="MST1R", chr=3,
+       fib="diabetes_MST1R.txt", telo="telomere_MST1R.txt",
+       lead="rs2230590", ld="rs2230590_LD.txt"),
+  list(organ="diabetes", gene="TRMT1", chr=19,
+       fib="diabetes_TRMT1.txt", telo="telomere_TRMT1.txt",
        lead="rs35601737", ld="rs35601737_LD.txt"),
-  list(organ="diabetes",       gene="SEC61A2", chr=10,
-       fib="diabetes_SEC61A2.txt",       telo="telomere_SEC61A2.txt",
-       lead=NA, ld=NA),
-  list(organ="diabetes",       gene="ATXN2",   chr=12,
-       fib="diabetes_ATXN2.txt",         telo="telomere_ATXN2.txt",
-       lead="rs4766578",  ld="rs4766578_LD.txt"),
-  list(organ="intestinalpanc", gene="DMC1",    chr=22,
-       fib="intestinalpanc_DMC1.txt",    telo="telomere_DMC1.txt",
-       lead=NA, ld=NA)
+  list(organ="diabetes", gene="SEC61A2", chr=10,
+       fib="diabetes_SEC61A2.txt", telo="telomere_SEC61A2.txt",
+       lead="rs11257571", ld="rs11257571_LD.txt"),
+  list(organ="diabetes", gene="ATXN2", chr=12,
+       fib="diabetes_ATXN2.txt", telo="telomere_ATXN2.txt",
+       lead="rs4766578", ld="rs4766578_LD.txt"),
+  list(organ="intestinalpanc", gene="DMC1", chr=22,
+       fib="intestinalpanc_DMC1.txt", telo="telomere_DMC1.txt",
+       lead="rs5750617", ld="rs5750617_LD.txt")
 )
 
 # LD colour scale (LocusZoom style)
@@ -84,22 +87,26 @@ for (r in regions) {
     min_p_f <- min(fib$p[fib$p > 0], na.rm=TRUE)
     fib$p[fib$p == 0] <- min_p_f
 
-    ld_data <- if (!is.na(r$ld))
-      read.table(file.path(LD_DIR, r$ld), header=TRUE, sep="	", fill=TRUE)
-    else NULL
+    # Load LD data
+    ld_data <- NULL
+    if (!is.na(r$ld)) {
+      ld_data <- read.table(file.path(LD_DIR, r$ld),
+                            header=TRUE, sep="	", fill=TRUE)
+    }
 
     # Scale telomere y-axis to fibrosis range
     fib_max  <- max(-log10(fib$p), na.rm=TRUE)
     telo_max <- max(-log10(telo$p_value), na.rm=TRUE)
 
     fib_plot <- data.frame(
-      pos     = fib$position / 1e6,
-      y       = -log10(fib$p),
+      pos      = fib$position / 1e6,
+      y        = -log10(fib$p),
       r2_group = assign_ld(fib$rsid, ld_data, r$lead)
     )
+
     telo_plot <- data.frame(
-      pos     = telo$base_pair_location / 1e6,
-      y       = -(-log10(telo$p_value) / telo_max * fib_max),
+      pos      = telo$base_pair_location / 1e6,
+      y        = -(-log10(telo$p_value) / telo_max * fib_max),
       r2_group = assign_ld(telo$rs_id, ld_data, r$lead)
     )
 
@@ -134,15 +141,16 @@ variant (r²)",
                           " fibrosis vs Telomere length"),
         subtitle = paste0("Chr", r$chr,
                           " | MAF ≥1% | Telomere y-axis scaled to fibrosis range",
-                          if (!is.na(r$lead))
-                            paste0(" | LD with ", r$lead, " (GBR)") else ""),
+                          " | LD with ", r$lead, " (GBR)"),
         x = paste0("Position (Mb, chr", r$chr, ")"),
         y = "-log10(p-value)"
       ) +
       theme_minimal() +
-      theme(plot.title    = element_text(face="bold", size=11),
-            plot.subtitle = element_text(size=9, colour="grey40"),
-            legend.position = "right")
+      theme(
+        plot.title      = element_text(face="bold", size=11),
+        plot.subtitle   = element_text(size=9, colour="grey40"),
+        legend.position = "right"
+      )
 
     png(file.path(OUT_DIR,
                   paste0(r$organ, "_", r$gene, "_mirror_LD.png")),
