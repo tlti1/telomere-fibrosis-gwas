@@ -5,10 +5,11 @@
 # Date: 2026
 # Description: Produces mirror plots for all 9 testable colocalisation
 #              regions. Fibrosis shown upward, telomere downward (scaled to
-#              fibrosis range). Each panel coloured by LD with its own lead
-#              variant (fibrosis lead for fibrosis panel, telomere lead for
-#              telomere panel) using LDLink LDproxy GBR population.
+#              fibrosis range). Points coloured by LD with telomere lead
+#              variant (LDLink LDproxy, GBR population) in both panels,
+#              consistent with telomere-first analysis design.
 #              MAF >= 1% filter applied. Zero p-values floored.
+#              Fibrosis positions mapped to GRCh38 via rsID matching.
 # ============================================================================
 
 library(ggplot2)
@@ -21,40 +22,31 @@ dir.create(OUT_DIR, showWarnings=FALSE)
 regions <- list(
   list(organ="respiratory", gene="TERT", chr=5,
        fib="respiratory_TERT.txt", telo="telomere_TERT.txt",
-       fib_lead="rs7725218", fib_ld="rs7725218_LD.txt",
-       telo_lead="rs7734992", telo_ld="rs7734992_LD.txt"),
+       lead="rs7705526", ld="rs7705526_LD.txt"),
   list(organ="cardiovascular", gene="ZC3HC1", chr=7,
        fib="cardiovascular_ZC3HC1.txt", telo="telomere_ZC3HC1.txt",
-       fib_lead="rs11556924", fib_ld="rs11556924_LD.txt",
-       telo_lead="rs11556924", telo_ld="rs11556924_LD.txt"),
+       lead="rs11556924", ld="rs11556924_LD.txt"),
   list(organ="cardiovascular", gene="ATXN2", chr=12,
        fib="cardiovascular_ATXN2.txt", telo="telomere_ATXN2.txt",
-       fib_lead="rs7310615", fib_ld="rs7310615_LD.txt",
-       telo_lead="rs4766578", telo_ld="rs4766578_LD.txt"),
+       lead="rs4766578", ld="rs4766578_LD.txt"),
   list(organ="diabetes", gene="PABPC4", chr=1,
        fib="diabetes_PABPC4.txt", telo="telomere_PABPC4.txt",
-       fib_lead="rs3768321", fib_ld="rs3768321_LD.txt",
-       telo_lead="rs3768321", telo_ld="rs3768321_LD.txt"),
+       lead="rs3768321", ld="rs3768321_LD.txt"),
   list(organ="diabetes", gene="MST1R", chr=3,
        fib="diabetes_MST1R.txt", telo="telomere_MST1R.txt",
-       fib_lead="rs199956414", fib_ld="rs199956414_LD.txt",
-       telo_lead="rs2230590", telo_ld="rs2230590_LD.txt"),
+       lead="rs2230590", ld="rs2230590_LD.txt"),
   list(organ="diabetes", gene="TRMT1", chr=19,
        fib="diabetes_TRMT1.txt", telo="telomere_TRMT1.txt",
-       fib_lead="rs17639568", fib_ld="rs17639568_LD.txt",
-       telo_lead="rs35601737", telo_ld="rs35601737_LD.txt"),
+       lead="rs35601737", ld="rs35601737_LD.txt"),
   list(organ="diabetes", gene="SEC61A2", chr=10,
        fib="diabetes_SEC61A2.txt", telo="telomere_SEC61A2.txt",
-       fib_lead="rs7895525", fib_ld="rs7895525_LD.txt",
-       telo_lead="rs11257571", telo_ld="rs11257571_LD.txt"),
+       lead="rs11257571", ld="rs11257571_LD.txt"),
   list(organ="diabetes", gene="ATXN2", chr=12,
        fib="diabetes_ATXN2.txt", telo="telomere_ATXN2.txt",
-       fib_lead="rs597808", fib_ld="rs597808_LD.txt",
-       telo_lead="rs4766578", telo_ld="rs4766578_LD.txt"),
+       lead="rs4766578", ld="rs4766578_LD.txt"),
   list(organ="intestinalpanc", gene="DMC1", chr=22,
        fib="intestinalpanc_DMC1.txt", telo="telomere_DMC1.txt",
-       fib_lead="rs138699", fib_ld="rs138699_LD.txt",
-       telo_lead="rs5750617", telo_ld="rs5750617_LD.txt")
+       lead="rs5750617", ld="rs5750617_LD.txt")
 )
 
 ld_cols <- c("Lead"="#7b2d8b","0.8-1.0"="#d7191c","0.6-0.8"="#f46d43",
@@ -81,33 +73,43 @@ for (r in regions) {
     fib  <- read.table(file.path(COLOC_DIR, r$fib),  header=TRUE, sep="	")
     telo <- read.table(file.path(COLOC_DIR, r$telo), header=TRUE, sep="	")
 
+    # MAF >= 1% filter
     fib  <- fib[fib$eaf >= 0.01 & fib$eaf <= 0.99, ]
     telo <- telo[telo$effect_allele_frequency >= 0.01 &
                  telo$effect_allele_frequency <= 0.99, ]
 
+    # Floor zero p-values (floating point underflow)
     min_p_t <- min(telo$p_value[telo$p_value > 0], na.rm=TRUE)
     telo$p_value[telo$p_value == 0] <- min_p_t
     min_p_f <- min(fib$p[fib$p > 0], na.rm=TRUE)
     fib$p[fib$p == 0] <- min_p_f
 
-    fib_ld_data  <- read.table(file.path(LD_DIR, r$fib_ld),
-                               header=TRUE, sep="	", fill=TRUE)
-    telo_ld_data <- read.table(file.path(LD_DIR, r$telo_ld),
-                               header=TRUE, sep="	", fill=TRUE)
+    # Map fibrosis positions to GRCh38 via rsID matching from telomere file
+    telo_pos_lookup <- setNames(telo$base_pair_location, telo$rs_id)
+    fib$position_hg38 <- ifelse(
+      fib$rsid %in% names(telo_pos_lookup),
+      telo_pos_lookup[fib$rsid],
+      fib$position
+    )
 
+    # Load LD data
+    ld_data <- read.table(file.path(LD_DIR, r$ld),
+                          header=TRUE, sep="	", fill=TRUE)
+
+    # Scale telomere y-axis to fibrosis range
     fib_max  <- max(-log10(fib$p), na.rm=TRUE)
     telo_max <- max(-log10(telo$p_value), na.rm=TRUE)
 
     fib_plot <- data.frame(
-      pos      = fib$position / 1e6,
+      pos      = fib$position_hg38 / 1e6,
       y        = -log10(fib$p),
-      r2_group = assign_ld(fib$rsid, fib_ld_data, r$fib_lead)
+      r2_group = assign_ld(fib$rsid, ld_data, r$lead)
     )
 
     telo_plot <- data.frame(
       pos      = telo$base_pair_location / 1e6,
       y        = -(-log10(telo$p_value) / telo_max * fib_max),
-      r2_group = assign_ld(telo$rs_id, telo_ld_data, r$telo_lead)
+      r2_group = assign_ld(telo$rs_id, ld_data, r$lead)
     )
 
     combined <- rbind(fib_plot, telo_plot)
@@ -123,8 +125,8 @@ for (r in regions) {
       geom_hline(yintercept=-(-log10(5e-8)/telo_max*fib_max),
                  linetype="dashed", colour="grey40", linewidth=0.5) +
       scale_colour_manual(values=ld_cols,
-                          name="LD with lead
-variant (r²)",
+                          name="LD with telomere
+lead variant (r²)",
                           labels=c("Lead variant","0.8-1.0","0.6-0.8",
                                    "0.4-0.6","0.2-0.4","<0.2"),
                           drop=FALSE) +
@@ -136,13 +138,12 @@ variant (r²)",
                y=-fib_max*0.9, label="Telomere ↓ (scaled)",
                colour="#1a5276", size=3.5, hjust=0, fontface="bold") +
       labs(
-        title    = paste0(r$gene, " region — ",
+        title    = paste0(r$gene, " region: ",
                           tools::toTitleCase(r$organ),
                           " fibrosis vs Telomere length"),
         subtitle = paste0("Chr", r$chr,
                           " | MAF ≥1% | Telomere y-axis scaled to fibrosis range",
-                          " | Fibrosis LD: ", r$fib_lead,
-                          " | Telomere LD: ", r$telo_lead, " (GBR)"),
+                          " | LD with telomere lead ", r$lead, " (GBR)"),
         x = paste0("Position (Mb, chr", r$chr, ")"),
         y = "-log10(p-value)"
       ) +
